@@ -8,9 +8,9 @@ export default function Footer() {
         {/* Logo centrado */}
         <div className="flex justify-center mb-12">
           <img
-            src="/Logo_valea_transparente.png"
+            src="/logo_claro_transparente.svg"
             alt="VALEA Aesthetics"
-            className="h-14 object-contain brightness-200 opacity-90"
+            className="h-20 object-contain"
           />
         </div>
 
