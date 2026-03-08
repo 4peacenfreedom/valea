@@ -10,6 +10,8 @@ import { Input, Select, Textarea } from '../ui/Input'
 import Button from '../ui/Button'
 import ConfirmationModal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
+import { createCalendarEvent } from '../../lib/googleCalendar'
+import { sendWhatsAppNotification } from '../../lib/whatsapp'
 import { SERVICES, type Appointment } from '../../types'
 import {
   generateConfirmationNumber,
@@ -73,32 +75,56 @@ export default function Booking() {
     try {
       const confirmationNumber = generateConfirmationNumber()
       const formattedDate = format(data.date, 'yyyy-MM-dd')
+      const displayDate = format(data.date, "EEEE d 'de' MMMM, yyyy", { locale: es })
+      const displayTime = formatDisplayTime(data.time)
 
+      // 1) Crear evento en Google Calendar (en paralelo con Supabase)
+      const [googleEventId] = await Promise.all([
+        createCalendarEvent({
+          patientName: data.full_name,
+          service: data.service,
+          date: formattedDate,
+          time: data.time,
+          phone: data.phone,
+          email: data.email,
+          notes: data.notes,
+          confirmationNumber,
+        }),
+      ])
+
+      // 2) Guardar en Supabase con el schema correcto
       const appointment: Omit<Appointment, 'id' | 'created_at'> = {
-        full_name: data.full_name,
+        patient_name: data.full_name,
         phone: data.phone,
         email: data.email,
         service: data.service,
-        date: formattedDate,
-        time: data.time,
+        appointment_date: formattedDate,
+        appointment_time: data.time,
         notes: data.notes || '',
         status: 'pending',
         confirmation_number: confirmationNumber,
+        google_event_id: googleEventId ?? undefined,
       }
 
-      // Guardar en Supabase
       const { error } = await supabase.from('appointments').insert([appointment])
+      if (error) console.error('Supabase error:', error)
 
-      if (error) {
-        console.error('Supabase error:', error)
-        // Continuar mostrando confirmación aunque falle (UX resiliente)
-      }
+      // 3) Notificación WhatsApp a la doctora (no bloqueante)
+      sendWhatsAppNotification({
+        patientName: data.full_name,
+        service: data.service,
+        date: displayDate,
+        time: displayTime,
+        phone: data.phone,
+        email: data.email,
+        confirmationNumber,
+      }).catch(console.error)
 
       setConfirmation({
         number: confirmationNumber,
         name: data.full_name.split(' ')[0],
-        date: format(data.date, "EEEE d 'de' MMMM, yyyy", { locale: es }),
-        time: formatDisplayTime(data.time),
+        date: displayDate,
+        time: displayTime,
         service: data.service,
       })
 

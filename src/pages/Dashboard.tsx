@@ -1,30 +1,25 @@
-// Dashboard — Parte 2 del proyecto
-// Se implementará en el siguiente sprint con:
-// - Lista de pacientes
-// - Expedientes médicos
-// - Gestión de citas
-// - Autenticación
+/**
+ * pages/Dashboard.tsx — Punto de entrada del dashboard médico.
+ * Actúa como router de sub-vistas. Protegido por PrivateRoute.
+ */
+import { Routes, Route } from 'react-router-dom'
+import DashboardLayout from '../components/dashboard/DashboardLayout'
+import Overview from '../components/dashboard/Overview'
+import PatientList from '../components/dashboard/PatientList'
+import PatientRecord from '../components/dashboard/PatientRecord'
+import NewPatientForm from '../components/dashboard/NewPatientForm'
+import AppointmentsList from '../components/dashboard/AppointmentsList'
 
 export default function Dashboard() {
   return (
-    <div className="min-h-screen bg-brand-lino flex items-center justify-center">
-      <div className="text-center px-6">
-        <p className="font-opensans text-xs tracking-[0.3em] uppercase text-brand-tierra mb-4">
-          Próximamente
-        </p>
-        <h1 className="font-cormorant text-4xl font-light tracking-widest text-brand-blue mb-4">
-          Panel de Administración
-        </h1>
-        <p className="font-opensans text-sm text-brand-bruma max-w-sm">
-          El módulo de gestión de pacientes y expedientes estará disponible pronto.
-        </p>
-        <a
-          href="/"
-          className="inline-block mt-8 font-opensans text-xs tracking-widest uppercase text-brand-tierra border border-brand-bruma/40 px-6 py-3 hover:border-brand-tierra transition-colors duration-300"
-        >
-          Volver al sitio
-        </a>
-      </div>
-    </div>
+    <Routes>
+      <Route element={<DashboardLayout />}>
+        <Route index element={<Overview />} />
+        <Route path="patients" element={<PatientList />} />
+        <Route path="patients/:id" element={<PatientRecord />} />
+        <Route path="appointments" element={<AppointmentsList />} />
+        <Route path="new-patient" element={<NewPatientForm />} />
+      </Route>
+    </Routes>
   )
 }
