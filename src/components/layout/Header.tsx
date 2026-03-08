@@ -55,11 +55,11 @@ export default function Header() {
             onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
           >
             <img
-              src="/Logo_valea_transparente.png"
+              src="/logo_oscuro_transparente.svg"
               alt="VALEA Aesthetics"
               className={cn(
                 'transition-all duration-500 object-contain',
-                isScrolled ? 'h-10' : 'h-12'
+                isScrolled ? 'h-14' : 'h-16'
               )}
             />
           </a>
@@ -131,9 +131,9 @@ export default function Header() {
         >
           <div className="flex items-center justify-between px-6 py-6 border-b border-brand-bruma/30">
             <img
-              src="/Logo_valea_transparente.png"
+              src="/logo_oscuro_transparente.svg"
               alt="VALEA Aesthetics"
-              className="h-9 object-contain"
+              className="h-14 object-contain"
             />
             <button
               onClick={() => setMobileOpen(false)}

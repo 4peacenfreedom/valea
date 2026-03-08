@@ -38,9 +38,9 @@ export default function DashboardLayout() {
       {/* Logo */}
       <div className="px-6 py-6 border-b border-brand-lino/10">
         <img
-          src="/Logo_valea_transparente.png"
+          src="/logo_claro_transparente.svg"
           alt="VALEA Aesthetics"
-          className="h-9 object-contain brightness-200 opacity-90"
+          className="h-14 object-contain"
         />
       </div>
 
@@ -139,9 +139,9 @@ export default function DashboardLayout() {
             <Menu size={22} strokeWidth={1.5} />
           </button>
           <img
-            src="/Logo_valea_transparente.png"
+            src="/logo_oscuro_transparente.svg"
             alt="VALEA Aesthetics"
-            className="h-7 object-contain"
+            className="h-10 object-contain"
           />
         </header>
 
