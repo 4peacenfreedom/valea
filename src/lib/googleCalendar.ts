@@ -22,6 +22,8 @@ export interface CalendarEventInput {
   email: string
   notes?: string
   confirmationNumber: string
+  recordNumber?: string   // Número de expediente (solo desde dashboard)
+  colorId?: string        // Color del evento en Google Calendar (default: '5')
 }
 
 /**
@@ -44,15 +46,20 @@ export async function createCalendarEvent(
     const endH = String(h + 1).padStart(2, '0')
     const endDateTime = `${input.date}T${endH}:${String(m).padStart(2, '0')}:00-06:00`
 
+    const esDashboard = Boolean(input.recordNumber)
     const event = {
-      summary: `Cita VALEA - ${input.patientName} - ${input.service}`,
+      summary: esDashboard
+        ? `VALEA | ${input.patientName} — ${input.service}`
+        : `Cita VALEA - ${input.patientName} - ${input.service}`,
       description: [
         `✅ Confirmación: #${input.confirmationNumber}`,
         `👤 Paciente: ${input.patientName}`,
+        input.recordNumber ? `📋 Expediente: ${input.recordNumber}` : '',
         `💉 Servicio: ${input.service}`,
         `📞 Teléfono: ${input.phone}`,
-        `📧 Correo: ${input.email}`,
+        `📧 Email: ${input.email}`,
         input.notes ? `📝 Notas: ${input.notes}` : '',
+        esDashboard ? '🖥️ Agendado por: Dashboard VALEA' : '',
       ]
         .filter(Boolean)
         .join('\n'),
@@ -72,7 +79,7 @@ export async function createCalendarEvent(
           { method: 'popup', minutes: 60 },         // 1 hora antes
         ],
       },
-      colorId: '5', // Banana (amarillo suave)
+      colorId: input.colorId ?? '5', // Default: Banana; Dashboard usa '1' (azul)
     }
 
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}`
@@ -94,5 +101,55 @@ export async function createCalendarEvent(
   } catch (error) {
     console.error('Error al crear evento en Google Calendar:', error)
     return null
+  }
+}
+
+/**
+ * Consulta Google Calendar y retorna los slots de 30 min ocupados en una fecha.
+ * Usa el endpoint events.list con una API Key (requiere calendario público o compartido).
+ * Retorna un array de strings en formato 'HH:MM'.
+ */
+export async function getOccupiedSlots(date: string): Promise<string[]> {
+  if (!CALENDAR_ID || !API_KEY) return []
+
+  try {
+    const timeMin = encodeURIComponent(`${date}T00:00:00-06:00`)
+    const timeMax = encodeURIComponent(`${date}T23:59:59-06:00`)
+    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&fields=items(start,end)`
+
+    const res = await fetch(url)
+    if (!res.ok) return []
+
+    const data = await res.json()
+    const events: { start: { dateTime: string }; end: { dateTime: string } }[] =
+      data.items ?? []
+
+    // Slots de 30 min que coinciden con algún evento
+    const occupied: string[] = []
+
+    for (const ev of events) {
+      const evStart = new Date(ev.start.dateTime)
+      const evEnd = new Date(ev.end.dateTime)
+
+      // Generar todos los slots del día para verificar solapamiento
+      const dateObj = new Date(date + 'T12:00:00') // hora neutra para evitar DST
+      const isSat = dateObj.getDay() === 6
+      const endHour = isSat ? 14 : 18
+
+      for (let h = 9; h < endHour; h++) {
+        for (const m of [0, 30]) {
+          const slotStart = new Date(`${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-06:00`)
+          const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000)
+          if (slotStart < evEnd && slotEnd > evStart) {
+            occupied.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+          }
+        }
+      }
+    }
+
+    return [...new Set(occupied)]
+  } catch (err) {
+    console.warn('No se pudo verificar disponibilidad en Google Calendar:', err)
+    return []
   }
 }

@@ -72,9 +72,11 @@ export function useTodayAppointments() {
 export function usePatientAppointments(patientEmail: string | undefined) {
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     if (!patientEmail) { setLoading(false); return }
+    setLoading(true)
     supabase
       .from('appointments')
       .select('*')
@@ -84,9 +86,11 @@ export function usePatientAppointments(patientEmail: string | undefined) {
         setAppointments(data || [])
         setLoading(false)
       })
-  }, [patientEmail])
+  }, [patientEmail, refreshKey])
 
-  return { appointments, loading }
+  const refetch = useCallback(() => setRefreshKey((k) => k + 1), [])
+
+  return { appointments, loading, refetch }
 }
 
 export function useDashboardKPIs() {
