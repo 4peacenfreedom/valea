@@ -134,7 +134,7 @@ export default function PatientRecord() {
             {id && <ConsentsTab patientId={id} />}
           </TabPanel>
           <TabPanel>
-            <AppointmentsTab patientEmail={patient.email} />
+            <AppointmentsTab patient={patient} />
           </TabPanel>
         </TabPanels>
       </TabGroup>
