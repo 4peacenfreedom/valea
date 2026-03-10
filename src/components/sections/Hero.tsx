@@ -130,7 +130,7 @@ export default function Hero() {
               >
                 {/* Si hay imagen de hero, se muestra; sino el gradiente */}
                 <img
-                  src="/hero-image.jpg"
+                  src="/flores.jpg"
                   alt="VALEA Aesthetics — Clínica Estética"
                   className="absolute inset-0 w-full h-full object-cover"
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
