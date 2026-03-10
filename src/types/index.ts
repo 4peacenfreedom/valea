@@ -138,6 +138,15 @@ export const SERVICES = [
 
 export type Service = typeof SERVICES[number]
 
+// ─── DISPONIBILIDAD ───────────────────────────────────────────────────────────
+
+/** Slot ya reservado con datos del paciente (para tooltips en el dashboard) */
+export interface OccupiedSlot {
+  time: string          // 'HH:MM'
+  patientName: string   // visible solo en dashboard (privacidad)
+  service: string       // visible solo en dashboard
+}
+
 // ─── KPIs del Dashboard ───────────────────────────────────────────────────────
 export interface DashboardKPIs {
   totalPatients: number

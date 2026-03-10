@@ -29,15 +29,23 @@ export function isPastDate(date: Date): boolean {
   return date < today
 }
 
-// Genera slots de 30 min según si es sábado (9-14) o entre semana (9-18)
+// Genera slots de 1 hora según el día de la semana.
+// 12:00 PM siempre bloqueado (almuerzo).
+// Lunes-Viernes: 9-11 AM y 1-5 PM (8 slots)
+// Sábados:       9-11 AM y 1 PM     (4 slots)
 export function generateTimeSlots(date: Date): string[] {
   const isSat = date.getDay() === 6
-  const endHour = isSat ? 14 : 18
   const slots: string[] = []
 
-  for (let h = 9; h < endHour; h++) {
-    slots.push(`${h.toString().padStart(2, '0')}:00`)
-    slots.push(`${h.toString().padStart(2, '0')}:30`)
+  // Mañana: 9:00, 10:00, 11:00
+  for (let h = 9; h <= 11; h++) {
+    slots.push(`${String(h).padStart(2, '0')}:00`)
+  }
+
+  // Tarde: 13:00–17:00 (lunes-viernes) o solo 13:00 (sábado)
+  const afternoonEnd = isSat ? 14 : 18
+  for (let h = 13; h < afternoonEnd; h++) {
+    slots.push(`${String(h).padStart(2, '0')}:00`)
   }
 
   return slots
