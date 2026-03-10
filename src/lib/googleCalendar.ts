@@ -105,51 +105,71 @@ export async function createCalendarEvent(
 }
 
 /**
- * Consulta Google Calendar y retorna los slots de 30 min ocupados en una fecha.
- * Usa el endpoint events.list con una API Key (requiere calendario público o compartido).
+ * Retorna los slots de 30 min ya reservados para una fecha dada.
+ *
+ * Fuente primaria: Supabase (siempre disponible, fuente de verdad del sistema).
+ * Fuente secundaria: Google Calendar API (solo si el calendario es público y
+ * se quieren bloquear eventos externos; requiere OAuth para calendarios privados).
+ *
  * Retorna un array de strings en formato 'HH:MM'.
  */
 export async function getOccupiedSlots(date: string): Promise<string[]> {
-  if (!CALENDAR_ID || !API_KEY) return []
+  // Importamos supabase aquí para no crear dependencias circulares en el módulo
+  const { supabase } = await import('./supabase')
 
-  try {
-    const timeMin = encodeURIComponent(`${date}T00:00:00-06:00`)
-    const timeMax = encodeURIComponent(`${date}T23:59:59-06:00`)
-    const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&fields=items(start,end)`
+  // 1. Consultar Supabase — fuente de verdad de todas las citas del sistema
+  const { data: dbRows } = await supabase
+    .from('appointments')
+    .select('appointment_time')
+    .eq('appointment_date', date)
+    .neq('status', 'cancelled')
 
-    const res = await fetch(url)
-    if (!res.ok) return []
+  const dbSlots: string[] = (dbRows ?? []).map(
+    (r: { appointment_time: string }) => r.appointment_time
+  )
 
-    const data = await res.json()
-    const events: { start: { dateTime: string }; end: { dateTime: string } }[] =
-      data.items ?? []
+  // 2. Intentar Google Calendar (complementario; falla silenciosamente si no
+  //    está configurado con OAuth o si el calendario es privado con solo API Key)
+  let calendarSlots: string[] = []
+  if (CALENDAR_ID && API_KEY) {
+    try {
+      const timeMin = encodeURIComponent(`${date}T00:00:00-06:00`)
+      const timeMax = encodeURIComponent(`${date}T23:59:59-06:00`)
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&fields=items(start,end)`
 
-    // Slots de 30 min que coinciden con algún evento
-    const occupied: string[] = []
+      const res = await fetch(url)
+      if (res.ok) {
+        const data = await res.json()
+        const events: { start: { dateTime: string }; end: { dateTime: string } }[] =
+          data.items ?? []
 
-    for (const ev of events) {
-      const evStart = new Date(ev.start.dateTime)
-      const evEnd = new Date(ev.end.dateTime)
+        const dateObj = new Date(date + 'T12:00:00')
+        const isSat = dateObj.getDay() === 6
+        const endHour = isSat ? 14 : 18
 
-      // Generar todos los slots del día para verificar solapamiento
-      const dateObj = new Date(date + 'T12:00:00') // hora neutra para evitar DST
-      const isSat = dateObj.getDay() === 6
-      const endHour = isSat ? 14 : 18
+        for (const ev of events) {
+          const evStart = new Date(ev.start.dateTime)
+          const evEnd = new Date(ev.end.dateTime)
 
-      for (let h = 9; h < endHour; h++) {
-        for (const m of [0, 30]) {
-          const slotStart = new Date(`${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-06:00`)
-          const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000)
-          if (slotStart < evEnd && slotEnd > evStart) {
-            occupied.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`)
+          for (let h = 9; h < endHour; h++) {
+            for (const m of [0, 30]) {
+              const slotStart = new Date(
+                `${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-06:00`
+              )
+              const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000)
+              if (slotStart < evEnd && slotEnd > evStart) {
+                calendarSlots.push(
+                  `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
+                )
+              }
+            }
           }
         }
       }
+    } catch {
+      // Google Calendar no disponible — continuar solo con Supabase
     }
-
-    return [...new Set(occupied)]
-  } catch (err) {
-    console.warn('No se pudo verificar disponibilidad en Google Calendar:', err)
-    return []
   }
+
+  return [...new Set([...dbSlots, ...calendarSlots])]
 }
