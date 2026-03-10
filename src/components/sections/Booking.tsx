@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useForm, Controller } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
@@ -10,7 +10,7 @@ import { Input, Select, Textarea } from '../ui/Input'
 import Button from '../ui/Button'
 import ConfirmationModal from '../ui/Modal'
 import { supabase } from '../../lib/supabase'
-import { createCalendarEvent } from '../../lib/googleCalendar'
+import { createCalendarEvent, getOccupiedSlots } from '../../lib/googleCalendar'
 import { sendWhatsAppNotification } from '../../lib/whatsapp'
 import { SERVICES, type Appointment } from '../../types'
 import {
@@ -36,6 +36,8 @@ type FormData = z.infer<typeof schema>
 
 export default function Booking() {
   const [timeSlots, setTimeSlots] = useState<string[]>([])
+  const [occupiedSlots, setOccupiedSlots] = useState<string[]>([])
+  const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<{
@@ -59,14 +61,25 @@ export default function Booking() {
 
   const selectedDate = watch('date')
 
+  // Al cambiar la fecha: generar slots y consultar ocupados en Supabase
+  const loadAvailability = useCallback(async (date: Date) => {
+    const slots = generateTimeSlots(date)
+    setTimeSlots(slots)
+    setOccupiedSlots([])
+    setCheckingAvailability(true)
+    const occupied = await getOccupiedSlots(format(date, 'yyyy-MM-dd'))
+    setOccupiedSlots(occupied)
+    setCheckingAvailability(false)
+  }, [])
+
   useEffect(() => {
     if (selectedDate) {
-      const slots = generateTimeSlots(selectedDate)
-      setTimeSlots(slots)
+      loadAvailability(selectedDate)
     } else {
       setTimeSlots([])
+      setOccupiedSlots([])
     }
-  }, [selectedDate])
+  }, [selectedDate, loadAvailability])
 
   const isDateDisabled = (date: Date) => isSunday(date) || isPastDate(date)
 
@@ -308,19 +321,22 @@ export default function Booking() {
 
                 {/* Hora */}
                 <Select
-                  label="Hora"
+                  label={checkingAvailability ? 'Hora — verificando disponibilidad…' : 'Hora'}
                   error={errors.time?.message}
-                  disabled={!selectedDate || timeSlots.length === 0}
+                  disabled={!selectedDate || timeSlots.length === 0 || checkingAvailability}
                   {...register('time')}
                 >
                   <option value="" className="bg-brand-blue">
                     {selectedDate ? 'Selecciona una hora' : 'Primero selecciona una fecha'}
                   </option>
-                  {timeSlots.map((slot) => (
-                    <option key={slot} value={slot} className="bg-brand-blue">
-                      {formatDisplayTime(slot)}
-                    </option>
-                  ))}
+                  {timeSlots.map((slot) => {
+                    const ocupado = occupiedSlots.includes(slot)
+                    return (
+                      <option key={slot} value={slot} disabled={ocupado} className="bg-brand-blue">
+                        {formatDisplayTime(slot)}{ocupado ? ' (Ocupado)' : ''}
+                      </option>
+                    )
+                  })}
                 </Select>
 
                 {/* Notas */}
