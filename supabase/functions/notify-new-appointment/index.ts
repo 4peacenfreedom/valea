@@ -24,12 +24,20 @@
  *    DOCTOR_NAME            → Dra. Carolina Castillo Rodas
  *    FROM_EMAIL             → notificaciones@valeacr.com (dominio verificado en Resend)
  *
- * 2. Database Webhook (Supabase → Database → Webhooks → Create webhook):
+ * 2. Database Webhooks (Supabase → Database → Webhooks):
+ *    Webhook A — nueva cita:
  *    - Nombre: notify-new-appointment
  *    - Tabla: public.appointments
  *    - Evento: INSERT
  *    - Tipo: Supabase Edge Functions
  *    - Edge Function: notify-new-appointment
+ *
+ *    Webhook B — cita confirmada:
+ *    - Nombre: notify-appointment-confirmed
+ *    - Tabla: public.appointments
+ *    - Evento: UPDATE
+ *    - Tipo: Supabase Edge Functions
+ *    - Edge Function: notify-new-appointment  ← misma función, maneja ambos casos
  *
  * 3. Deploy (desde la raíz del proyecto):
  *    npx supabase functions deploy notify-new-appointment
@@ -57,6 +65,7 @@ interface WebhookPayload {
   type: 'INSERT' | 'UPDATE' | 'DELETE'
   table: string
   record: AppointmentRecord
+  old_record?: AppointmentRecord
   schema: string
 }
 
@@ -320,32 +329,54 @@ serve(async (req: Request) => {
     return new Response('Invalid JSON', { status: 400 })
   }
 
-  // Solo procesar INSERT en appointments
-  if (payload.type !== 'INSERT' || payload.table !== 'appointments') {
+  if (payload.table !== 'appointments') {
     return new Response('OK — evento ignorado', { status: 200 })
   }
 
   const appt = payload.record
-  console.log(`[notify-new-appointment] Nueva cita: ${appt.confirmation_number} — ${appt.patient_name}`)
+  const tasks: Promise<void>[] = []
 
-  // Ejecutar notificaciones en paralelo — los errores individuales no detienen el flujo
-  const tasks: Promise<void>[] = [
-    sendConfirmationEmail(appt).catch((e) =>
-      console.error('[notify] Error en email:', e)
-    ),
-    notifyClient(appt).catch((e) =>
-      console.error('[notify] Error en WhatsApp cliente:', e)
-    ),
-  ]
+  // ── Caso 1: nueva cita (INSERT) ───────────────────────────────────────────
+  if (payload.type === 'INSERT') {
+    console.log(`[notify] INSERT — ${appt.confirmation_number} — ${appt.patient_name}`)
 
-  // WhatsApp a la doctora solo cuando el cliente agenda desde el sitio (pending)
-  // No cuando la doctora agenda desde el dashboard (confirmed)
-  if (appt.status === 'pending') {
     tasks.push(
-      notifyDoctor(appt).catch((e) =>
-        console.error('[notify] Error en WhatsApp doctora:', e)
+      sendConfirmationEmail(appt).catch((e) =>
+        console.error('[notify] Error en email:', e)
+      ),
+      notifyClient(appt).catch((e) =>
+        console.error('[notify] Error en WhatsApp cliente:', e)
       )
     )
+
+    // WhatsApp a la doctora solo cuando el cliente agenda desde el sitio (pending)
+    if (appt.status === 'pending') {
+      tasks.push(
+        notifyDoctor(appt).catch((e) =>
+          console.error('[notify] Error en WhatsApp doctora:', e)
+        )
+      )
+    }
+
+  // ── Caso 2: cita aprobada (UPDATE pending → confirmed) ────────────────────
+  } else if (
+    payload.type === 'UPDATE' &&
+    payload.old_record?.status !== 'confirmed' &&
+    appt.status === 'confirmed'
+  ) {
+    console.log(`[notify] UPDATE confirmed — ${appt.confirmation_number} — ${appt.patient_name}`)
+
+    tasks.push(
+      sendConfirmationEmail(appt).catch((e) =>
+        console.error('[notify] Error en email confirmación:', e)
+      ),
+      notifyClient(appt).catch((e) =>
+        console.error('[notify] Error en WhatsApp cliente confirmación:', e)
+      )
+    )
+
+  } else {
+    return new Response('OK — evento ignorado', { status: 200 })
   }
 
   await Promise.all(tasks)
