@@ -42,6 +42,7 @@ type FormData = z.infer<typeof schema>
 
 export default function Booking() {
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<{
     number: string
@@ -68,6 +69,7 @@ export default function Booking() {
 
   const onSubmit = async (data: FormData) => {
     setIsSubmitting(true)
+    setSubmitError(null)
     try {
       const confirmationNumber = generateConfirmationNumber()
       const formattedDate = format(data.date, 'yyyy-MM-dd')
@@ -106,7 +108,11 @@ export default function Booking() {
       }
 
       const { error } = await supabase.from('appointments').insert([appointment])
-      if (error) console.error('Supabase error:', error)
+      if (error) {
+        console.error('Supabase error:', error)
+        setSubmitError('Este horario ya fue reservado. Por favor seleccioná otro horario.')
+        return
+      }
 
       setConfirmation({
         number: confirmationNumber,
@@ -119,6 +125,7 @@ export default function Booking() {
       reset()
     } catch (err) {
       console.error('Error al enviar la cita:', err)
+      setSubmitError('Ocurrió un error al enviar la cita. Por favor intentá de nuevo.')
     } finally {
       setIsSubmitting(false)
     }
@@ -327,6 +334,11 @@ export default function Booking() {
 
             {/* Submit */}
             <div className="mt-10 flex flex-col items-center gap-4">
+              {submitError && (
+                <p className="font-opensans text-sm text-red-400 text-center bg-white/10 border border-red-400/30 px-4 py-3 max-w-sm">
+                  {submitError}
+                </p>
+              )}
               <Button
                 type="submit"
                 variant="arena"

@@ -26,7 +26,7 @@ import {
 } from '../../lib/utils'
 import { SERVICES } from '../../types'
 import type { Patient } from '../../types'
-import TimeSlotSelect from '../ui/TimeSlotSelect'
+import TimeSlotGrid from '../ui/TimeSlotGrid'
 
 registerLocale('es', es)
 
@@ -248,19 +248,18 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
                       )}
                     </div>
 
-                    {/* Hora — TimeSlotSelect con info de paciente (dashboard) */}
+                    {/* Hora — TimeSlotGrid con tooltips de paciente (dashboard) */}
                     <div>
                       <label className="block font-opensans text-xs uppercase tracking-wider text-brand-blue mb-1.5">
                         Horario <span className="text-red-400">*</span>
                       </label>
-                      <TimeSlotSelect
+                      <TimeSlotGrid
                         date={dateStr}
                         value={form.time}
                         onChange={(time) => {
                           setForm((p) => ({ ...p, time }))
                           setErrors((p) => ({ ...p, time: undefined }))
                         }}
-                        showPatientInfo={true}
                         error={errors.time}
                       />
                     </div>
