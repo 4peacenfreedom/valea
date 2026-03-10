@@ -55,7 +55,8 @@ export function useAvailability(date: string | null): AvailabilityResult {
         } else {
           setOccupiedSlots(
             (data ?? []).map((row) => ({
-              time: row.appointment_time,
+              // Supabase devuelve columnas `time` como 'HH:MM:SS'; normalizar a 'HH:MM'
+              time: (row.appointment_time as string).substring(0, 5),
               patientName: row.patient_name,
               service: row.service,
             }))

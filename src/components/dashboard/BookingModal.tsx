@@ -94,7 +94,22 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
     const confirmationNumber = generateConfirmationNumber()
     const formattedDate = format(form.date!, 'yyyy-MM-dd')
 
-    // 1. Guardar en Supabase — status "confirmed" porque la agenda la doctora
+    // 1. Verificar que el slot sigue disponible (por si acaso)
+    const { data: conflict } = await supabase
+      .from('appointments')
+      .select('id')
+      .eq('appointment_date', formattedDate)
+      .eq('appointment_time', form.time)
+      .neq('status', 'cancelled')
+      .maybeSingle()
+
+    if (conflict) {
+      setSubmitError('Este horario ya fue reservado. Por favor seleccioná otro.')
+      setSubmitting(false)
+      return
+    }
+
+    // 2. Guardar en Supabase — status "confirmed" porque la agenda la doctora
     //    El INSERT dispara la Edge Function notify-new-appointment
     const { error: dbError } = await supabase.from('appointments').insert({
       patient_name: patient.full_name,

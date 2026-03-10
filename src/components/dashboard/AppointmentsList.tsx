@@ -95,7 +95,7 @@ export default function AppointmentsList() {
                 {/* Desktop */}
                 <div className="hidden lg:grid grid-cols-[1fr_1fr_1.5fr_1fr_1fr] gap-4 items-center">
                   <p className="font-opensans text-sm text-brand-blue">
-                    {format(new Date(appt.appointment_date), "d MMM yyyy", { locale: es })}
+                    {format(new Date(appt.appointment_date + 'T12:00:00'), "d MMM yyyy", { locale: es })}
                   </p>
                   <p className="font-opensans text-sm text-brand-tierra">
                     {formatDisplayTime(appt.appointment_time)}
@@ -125,7 +125,7 @@ export default function AppointmentsList() {
                     <p className="font-opensans text-sm font-medium text-brand-blue">{appt.patient_name}</p>
                     <p className="font-opensans text-xs text-brand-tierra">{appt.service}</p>
                     <p className="font-opensans text-xs text-brand-bruma mt-0.5">
-                      {format(new Date(appt.appointment_date), "d MMM yyyy", { locale: es })} · {formatDisplayTime(appt.appointment_time)}
+                      {format(new Date(appt.appointment_date + 'T12:00:00'), "d MMM yyyy", { locale: es })} · {formatDisplayTime(appt.appointment_time)}
                     </p>
                   </div>
                   <div className={`flex items-center gap-1 ${status.className} shrink-0`}>
