@@ -9,7 +9,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { usePatients } from '../../hooks/usePatients'
-import { format } from 'date-fns'
+import { supabase } from '../../lib/supabase'
 
 const schema = z.object({
   full_name: z.string().min(3, 'Ingresa el nombre completo'),
@@ -26,11 +26,27 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>
 
-/** Genera número de expediente: VA-2025-XXXX */
-function generateRecordNumber(): string {
-  const year = format(new Date(), 'yyyy')
-  const seq = String(Math.floor(Math.random() * 9000) + 1000)
-  return `VA-${year}-${seq}`
+/**
+ * Genera número de expediente secuencial por año: VA-2026-01, VA-2026-02…
+ * Consulta los expedientes existentes del año en curso para determinar el siguiente número.
+ */
+async function generateRecordNumber(): Promise<string> {
+  const year = new Date().getFullYear()
+  const prefix = `VA-${year}-`
+
+  const { data } = await supabase
+    .from('patients')
+    .select('record_number')
+    .like('record_number', `${prefix}%`)
+
+  let maxSeq = 0
+  for (const row of data ?? []) {
+    const seq = parseInt((row.record_number ?? '').slice(prefix.length), 10)
+    if (!isNaN(seq) && seq > maxSeq) maxSeq = seq
+  }
+
+  const next = String(maxSeq + 1).padStart(2, '0')
+  return `${prefix}${next}`
 }
 
 export default function NewPatientForm() {
@@ -49,7 +65,7 @@ export default function NewPatientForm() {
     try {
       const patient = await createPatient({
         ...data,
-        record_number: generateRecordNumber(),
+        record_number: await generateRecordNumber(),
         active: true,
         medical_history: {},
         systems_review: {},
