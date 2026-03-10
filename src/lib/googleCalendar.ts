@@ -1,13 +1,20 @@
 /**
- * lib/googleCalendar.ts — Integración con Google Calendar API v3
- * Crea eventos de cita en el calendario de VALEA Aesthetics.
+ * lib/googleCalendar.ts — Integración con Google Calendar API v3.
+ * Responsabilidad única: crear eventos de cita en el calendario de VALEA.
+ *
+ * Limpieza realizada:
+ *   - Se eliminó getOccupiedSlots() que intentaba leer disponibilidad desde
+ *     Google Calendar con API Key. Esa lógica migró a useAvailability.ts,
+ *     que consulta Supabase (fuente de verdad real del sistema).
+ *   - Se eliminó el import dinámico de supabase que había quedado aquí.
+ *
+ * Nota: createCalendarEvent() requiere OAuth 2.0 para funcionar.
+ * Una API Key sola no puede crear eventos (error 401/403).
+ * Pendiente: configurar Google Apps Script o Supabase Edge Function como proxy.
  *
  * Variables de entorno requeridas:
- *   VITE_GOOGLE_CALENDAR_ID — ID del calendario (e.g. xxx@group.calendar.google.com)
- *   VITE_GOOGLE_API_KEY     — API Key con acceso a Calendar API v3
- *
- * Nota: Para producción se recomienda mover a Supabase Edge Function
- * para no exponer el API key en el cliente.
+ *   VITE_GOOGLE_CALENDAR_ID — ID del calendario
+ *   VITE_GOOGLE_API_KEY     — API Key
  */
 
 const CALENDAR_ID = import.meta.env.VITE_GOOGLE_CALENDAR_ID as string
@@ -16,19 +23,22 @@ const API_KEY = import.meta.env.VITE_GOOGLE_API_KEY as string
 export interface CalendarEventInput {
   patientName: string
   service: string
-  date: string        // 'YYYY-MM-DD'
-  time: string        // 'HH:MM'
+  date: string              // 'YYYY-MM-DD'
+  time: string              // 'HH:MM'
   phone: string
   email: string
   notes?: string
   confirmationNumber: string
-  recordNumber?: string   // Número de expediente (solo desde dashboard)
-  colorId?: string        // Color del evento en Google Calendar (default: '5')
+  recordNumber?: string     // Número de expediente (solo desde dashboard)
+  colorId?: string          // Color del evento (default: '5' banana, dashboard: '1' azul)
 }
 
 /**
  * Crea un evento de cita en Google Calendar.
  * Retorna el ID del evento creado, o null si falla.
+ *
+ * Falla silenciosamente — la cita ya está guardada en Supabase
+ * independientemente del resultado de esta función.
  */
 export async function createCalendarEvent(
   input: CalendarEventInput
@@ -39,9 +49,7 @@ export async function createCalendarEvent(
   }
 
   try {
-    // Construcción de fechas ISO 8601 con timezone de Costa Rica (UTC-6)
     const startDateTime = `${input.date}T${input.time}:00-06:00`
-    // Duración por defecto: 1 hora
     const [h, m] = input.time.split(':').map(Number)
     const endH = String(h + 1).padStart(2, '0')
     const endDateTime = `${input.date}T${endH}:${String(m).padStart(2, '0')}:00-06:00`
@@ -64,22 +72,16 @@ export async function createCalendarEvent(
         .filter(Boolean)
         .join('\n'),
       location: 'VALEA Aesthetics, Alajuela, Costa Rica',
-      start: {
-        dateTime: startDateTime,
-        timeZone: 'America/Costa_Rica',
-      },
-      end: {
-        dateTime: endDateTime,
-        timeZone: 'America/Costa_Rica',
-      },
+      start: { dateTime: startDateTime, timeZone: 'America/Costa_Rica' },
+      end: { dateTime: endDateTime, timeZone: 'America/Costa_Rica' },
       reminders: {
         useDefault: false,
         overrides: [
-          { method: 'email', minutes: 24 * 60 },  // 24 horas antes
-          { method: 'popup', minutes: 60 },         // 1 hora antes
+          { method: 'email', minutes: 24 * 60 },
+          { method: 'popup', minutes: 60 },
         ],
       },
-      colorId: input.colorId ?? '5', // Default: Banana; Dashboard usa '1' (azul)
+      colorId: input.colorId ?? '5',
     }
 
     const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}`
@@ -102,74 +104,4 @@ export async function createCalendarEvent(
     console.error('Error al crear evento en Google Calendar:', error)
     return null
   }
-}
-
-/**
- * Retorna los slots de 30 min ya reservados para una fecha dada.
- *
- * Fuente primaria: Supabase (siempre disponible, fuente de verdad del sistema).
- * Fuente secundaria: Google Calendar API (solo si el calendario es público y
- * se quieren bloquear eventos externos; requiere OAuth para calendarios privados).
- *
- * Retorna un array de strings en formato 'HH:MM'.
- */
-export async function getOccupiedSlots(date: string): Promise<string[]> {
-  // Importamos supabase aquí para no crear dependencias circulares en el módulo
-  const { supabase } = await import('./supabase')
-
-  // 1. Consultar Supabase — fuente de verdad de todas las citas del sistema
-  const { data: dbRows } = await supabase
-    .from('appointments')
-    .select('appointment_time')
-    .eq('appointment_date', date)
-    .neq('status', 'cancelled')
-
-  const dbSlots: string[] = (dbRows ?? []).map(
-    (r: { appointment_time: string }) => r.appointment_time
-  )
-
-  // 2. Intentar Google Calendar (complementario; falla silenciosamente si no
-  //    está configurado con OAuth o si el calendario es privado con solo API Key)
-  let calendarSlots: string[] = []
-  if (CALENDAR_ID && API_KEY) {
-    try {
-      const timeMin = encodeURIComponent(`${date}T00:00:00-06:00`)
-      const timeMax = encodeURIComponent(`${date}T23:59:59-06:00`)
-      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(CALENDAR_ID)}/events?key=${API_KEY}&timeMin=${timeMin}&timeMax=${timeMax}&singleEvents=true&fields=items(start,end)`
-
-      const res = await fetch(url)
-      if (res.ok) {
-        const data = await res.json()
-        const events: { start: { dateTime: string }; end: { dateTime: string } }[] =
-          data.items ?? []
-
-        const dateObj = new Date(date + 'T12:00:00')
-        const isSat = dateObj.getDay() === 6
-        const endHour = isSat ? 14 : 18
-
-        for (const ev of events) {
-          const evStart = new Date(ev.start.dateTime)
-          const evEnd = new Date(ev.end.dateTime)
-
-          for (let h = 9; h < endHour; h++) {
-            for (const m of [0, 30]) {
-              const slotStart = new Date(
-                `${date}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00-06:00`
-              )
-              const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000)
-              if (slotStart < evEnd && slotEnd > evStart) {
-                calendarSlots.push(
-                  `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
-                )
-              }
-            }
-          }
-        }
-      }
-    } catch {
-      // Google Calendar no disponible — continuar solo con Supabase
-    }
-  }
-
-  return [...new Set([...dbSlots, ...calendarSlots])]
 }
