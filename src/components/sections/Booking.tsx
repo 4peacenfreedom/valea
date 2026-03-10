@@ -346,7 +346,7 @@ export default function Booking() {
                 disabled={isSubmitting}
                 className="min-w-48"
               >
-                {isSubmitting ? 'Enviando...' : 'Confirmar Cita'}
+                {isSubmitting ? 'Enviando...' : 'Enviar Solicitud'}
               </Button>
               <p className="font-opensans text-xs text-brand-lino/40 text-center max-w-xs">
                 Al confirmar, recibirás un correo de confirmación con los detalles de tu cita.
