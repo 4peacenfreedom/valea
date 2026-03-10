@@ -63,7 +63,7 @@ export default function ConfirmationModal({
                   as="h3"
                   className="font-cormorant text-2xl font-light tracking-widest text-brand-blue uppercase mb-2"
                 >
-                  ¡Cita Confirmada!
+                  ¡Solicitud Enviada!
                 </Dialog.Title>
 
                 <p className="font-opensans text-sm text-brand-tierra mb-6">
