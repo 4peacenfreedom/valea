@@ -23,7 +23,6 @@ import Button from '../ui/Button'
 import ConfirmationModal from '../ui/Modal'
 import TimeSlotSelect from '../ui/TimeSlotSelect'
 import { supabase } from '../../lib/supabase'
-import { createCalendarEvent } from '../../lib/googleCalendar'
 import { SERVICES, type Appointment } from '../../types'
 import { generateConfirmationNumber, isSunday, isPastDate } from '../../lib/utils'
 import { format } from 'date-fns'
@@ -81,19 +80,8 @@ export default function Booking() {
         return `${display}:00 ${period}`
       })
 
-      // 1. Crear evento en Google Calendar (falla silenciosamente si no hay OAuth)
-      const googleEventId = await createCalendarEvent({
-        patientName: data.full_name,
-        service: data.service,
-        date: formattedDate,
-        time: data.time,
-        phone: data.phone,
-        email: data.email,
-        notes: data.notes,
-        confirmationNumber,
-      })
-
-      // 2. Guardar en Supabase — dispara Edge Function notify-new-appointment
+      // Guardar en Supabase — dispara Edge Function notify-new-appointment
+      // (la Edge Function crea el evento en Google Calendar server-side)
       const appointment: Omit<Appointment, 'id' | 'created_at'> = {
         patient_name: data.full_name,
         phone: data.phone,
@@ -104,7 +92,6 @@ export default function Booking() {
         notes: data.notes || '',
         status: 'pending',
         confirmation_number: confirmationNumber,
-        google_event_id: googleEventId ?? undefined,
       }
 
       const { error } = await supabase.from('appointments').insert([appointment])

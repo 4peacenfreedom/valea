@@ -1,23 +1,15 @@
 /**
  * components/dashboard/BookingModal.tsx
  * Modal para agendar una cita manualmente desde el expediente del paciente.
- *
- * Limpieza realizada:
- *   - Eliminados los estados locales de disponibilidad (occupiedSlots,
- *     checkingAvailability) y el useEffect que los manejaba.
- *     Esa lógica migró al componente compartido TimeSlotSelect
- *     (que usa el hook useAvailability internamente).
- *   - Eliminado el import de getOccupiedSlots (ya no existe en googleCalendar.ts).
  */
 import { Fragment, useState, useEffect } from 'react'
 import { Dialog, Transition } from '@headlessui/react'
-import { X, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react'
+import { X, CheckCircle, Loader2 } from 'lucide-react'
 import DatePicker, { registerLocale } from 'react-datepicker'
 import { es } from 'date-fns/locale/es'
 import { format } from 'date-fns'
 import 'react-datepicker/dist/react-datepicker.css'
 import { supabase } from '../../lib/supabase'
-import { createCalendarEvent } from '../../lib/googleCalendar'
 import {
   generateConfirmationNumber,
   formatDisplayTime,
@@ -59,20 +51,16 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
   const [submitting, setSubmitting] = useState(false)
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({})
   const [submitError, setSubmitError] = useState<string | null>(null)
-  const [calendarWarning, setCalendarWarning] = useState(false)
   const [successData, setSuccessData] = useState<SuccessData | null>(null)
 
-  // Fecha en 'YYYY-MM-DD' para el TimeSlotSelect
   const dateStr = form.date ? format(form.date, 'yyyy-MM-dd') : null
 
-  // Al abrir, resetear todo el estado del formulario
   useEffect(() => {
     if (isOpen) {
       setView('form')
       setForm({ service: '', date: null, time: '', notes: '' })
       setErrors({})
       setSubmitError(null)
-      setCalendarWarning(false)
       setSuccessData(null)
     }
   }, [isOpen])
@@ -94,7 +82,7 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
     const confirmationNumber = generateConfirmationNumber()
     const formattedDate = format(form.date!, 'yyyy-MM-dd')
 
-    // 1. Verificar que el slot sigue disponible (por si acaso)
+    // 1. Verificar que el slot sigue disponible
     const { data: conflict } = await supabase
       .from('appointments')
       .select('id')
@@ -110,7 +98,7 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
     }
 
     // 2. Guardar en Supabase — status "confirmed" porque la agenda la doctora
-    //    El INSERT dispara la Edge Function notify-new-appointment
+    //    El INSERT dispara la Edge Function (notificaciones + Google Calendar)
     const { error: dbError } = await supabase.from('appointments').insert({
       patient_name: patient.full_name,
       phone: patient.phone ?? '',
@@ -129,22 +117,6 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
       return
     }
 
-    // 2. Crear evento en Google Calendar (colorId '1' = azul para dashboard)
-    const eventId = await createCalendarEvent({
-      patientName: patient.full_name,
-      service: form.service,
-      date: formattedDate,
-      time: form.time,
-      phone: patient.phone ?? '',
-      email: patient.email ?? '',
-      notes: form.notes,
-      confirmationNumber,
-      recordNumber: patient.record_number,
-      colorId: '1',
-    })
-
-    if (!eventId) setCalendarWarning(true)
-
     setSuccessData({
       confirmationNumber,
       date: format(form.date!, "d 'de' MMMM, yyyy", { locale: es }),
@@ -162,7 +134,6 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
 
   return (
     <Transition appear show={isOpen} as={Fragment}>
-      {/* onClose vacío: no cerrar al click fuera para evitar pérdida de datos */}
       <Dialog as="div" className="relative z-50" onClose={() => {}}>
         {/* Overlay */}
         <Transition.Child
@@ -263,7 +234,7 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
                       )}
                     </div>
 
-                    {/* Hora — TimeSlotGrid con tooltips de paciente (dashboard) */}
+                    {/* Hora — TimeSlotGrid con tooltips de paciente */}
                     <div>
                       <label className="block font-opensans text-xs uppercase tracking-wider text-brand-blue mb-1.5">
                         Horario <span className="text-red-400">*</span>
@@ -332,15 +303,6 @@ export default function BookingModal({ isOpen, onClose, patient, onSuccess }: Pr
                     <p className="font-opensans text-sm text-brand-tierra mb-5">
                       La cita fue agendada exitosamente.
                     </p>
-
-                    {calendarWarning && (
-                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 px-4 py-3 mb-5 text-left">
-                        <AlertTriangle size={14} className="text-amber-500 mt-0.5 shrink-0" />
-                        <p className="font-opensans text-xs text-amber-700">
-                          ⚠️ Cita guardada pero no se sincronizó con Google Calendar. Agrégala manualmente.
-                        </p>
-                      </div>
-                    )}
 
                     <div className="border border-brand-arena p-4 mb-6 text-left space-y-2.5">
                       {[
