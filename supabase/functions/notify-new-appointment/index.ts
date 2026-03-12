@@ -1,43 +1,43 @@
 /**
  * supabase/functions/notify-new-appointment/index.ts
- * Edge Function de Supabase para notificaciones automáticas de nuevas citas.
+ * Edge Function de Supabase para notificaciones automáticas de citas.
  *
- * Se activa mediante un Database Webhook en Supabase al INSERT en la tabla
- * `appointments`. Envía en paralelo:
+ * Se activa mediante Database Webhooks en la tabla `appointments`.
+ * Por cada evento ejecuta en paralelo:
  *   1. Email de confirmación al cliente (vía Resend)
- *   2. WhatsApp de alerta a la doctora (vía CallMeBot) — solo si status=pending
- *   3. WhatsApp de confirmación al cliente (vía CallMeBot) — si tiene número válido
+ *   2. WhatsApp de alerta a la doctora (vía CallMeBot) — solo en INSERT pending
+ *   3. WhatsApp de confirmación al cliente (vía CallMeBot)
+ *   4. Evento en Google Calendar (vía Service Account JWT)
  *
- * Diferencia entre flujos:
- *   status="pending"   → formulario público → notificar a doctora + cliente
- *   status="confirmed" → modal del dashboard → solo notificar al cliente
- *                        (la doctora ya está al tanto porque ella misma la agendó)
+ * Flujos:
+ *   INSERT status="pending"   → formulario público → email + WhatsApp doctora + WhatsApp cliente + Calendar
+ *   INSERT status="confirmed" → dashboard (doctora) → email + WhatsApp cliente + Calendar
+ *   UPDATE pending→confirmed  → doctora aprueba cita → email + WhatsApp cliente + Calendar
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * CONFIGURACIÓN REQUERIDA EN SUPABASE
  * ─────────────────────────────────────────────────────────────────────────────
  * 1. Variables de entorno (Supabase → Settings → Edge Functions → Secrets):
- *    RESEND_API_KEY         → API key de Resend.com
- *    DOCTOR_WHATSAPP_PHONE  → Número de la doctora con código país (+50670278704)
- *    DOCTOR_CALLMEBOT_KEY   → API key de CallMeBot de la doctora
- *    CLINIC_NAME            → VALEA Aesthetics
- *    DOCTOR_NAME            → Dra. Carolina Castillo Rodas
- *    FROM_EMAIL             → notificaciones@valeacr.com (dominio verificado en Resend)
+ *    RESEND_API_KEY                → API key de Resend.com
+ *    DOCTOR_WHATSAPP_PHONE         → Número de la doctora con código país
+ *    DOCTOR_CALLMEBOT_KEY          → API key de CallMeBot de la doctora
+ *    CLINIC_NAME                   → VALEA Aesthetics
+ *    DOCTOR_NAME                   → Dra. Carolina Castillo Rodas
+ *    FROM_EMAIL                    → notificaciones@valeacr.com
+ *    GOOGLE_SERVICE_ACCOUNT_EMAIL  → email de la service account
+ *    GOOGLE_PRIVATE_KEY            → clave privada PEM (con \n como texto literal)
+ *    GOOGLE_CALENDAR_ID            → ID del calendario de Google
  *
  * 2. Database Webhooks (Supabase → Database → Webhooks):
  *    Webhook A — nueva cita:
  *    - Nombre: notify-new-appointment
- *    - Tabla: public.appointments
- *    - Evento: INSERT
- *    - Tipo: Supabase Edge Functions
- *    - Edge Function: notify-new-appointment
+ *    - Tabla: public.appointments  |  Evento: INSERT
+ *    - Tipo: Supabase Edge Functions  |  Edge Function: notify-new-appointment
  *
  *    Webhook B — cita confirmada:
  *    - Nombre: notify-appointment-confirmed
- *    - Tabla: public.appointments
- *    - Evento: UPDATE
- *    - Tipo: Supabase Edge Functions
- *    - Edge Function: notify-new-appointment  ← misma función, maneja ambos casos
+ *    - Tabla: public.appointments  |  Evento: UPDATE
+ *    - Tipo: Supabase Edge Functions  |  Edge Function: notify-new-appointment
  *
  * 3. Deploy (desde la raíz del proyecto):
  *    npx supabase functions deploy notify-new-appointment
@@ -55,7 +55,7 @@ interface AppointmentRecord {
   email: string
   service: string
   appointment_date: string   // 'YYYY-MM-DD'
-  appointment_time: string   // 'HH:MM'
+  appointment_time: string   // 'HH:MM' o 'HH:MM:SS'
   notes?: string
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
   confirmation_number?: string
@@ -82,12 +82,171 @@ function formatDate(dateStr: string): string {
   })
 }
 
-/** Formatea 'HH:MM' → 'H:MM AM/PM' */
+/** Formatea 'HH:MM' o 'HH:MM:SS' → 'H:MM AM/PM' */
 function formatTime(timeStr: string): string {
   const [h, m] = timeStr.split(':').map(Number)
   const period = h >= 12 ? 'PM' : 'AM'
   const displayH = h > 12 ? h - 12 : h === 0 ? 12 : h
   return `${displayH}:${String(m).padStart(2, '0')} ${period}`
+}
+
+/** Normaliza 'HH:MM:SS' → 'HH:MM' */
+function normalizeTime(timeStr: string): string {
+  return timeStr.substring(0, 5)
+}
+
+// ─── Google Calendar ───────────────────────────────────────────────────────────
+
+/**
+ * Obtiene un access token de Google usando una Service Account via JWT (RS256).
+ */
+async function getGoogleAccessToken(
+  serviceAccountEmail: string,
+  privateKeyPem: string
+): Promise<string | null> {
+  try {
+    // Reemplazar \n literal por saltos de línea reales
+    const privateKey = privateKeyPem.replace(/\\n/g, '\n')
+
+    const now = Math.floor(Date.now() / 1000)
+
+    // Encodear a base64url
+    const b64url = (obj: unknown) =>
+      btoa(JSON.stringify(obj))
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_')
+        .replace(/=/g, '')
+
+    const header = b64url({ alg: 'RS256', typ: 'JWT' })
+    const payload = b64url({
+      iss: serviceAccountEmail,
+      scope: 'https://www.googleapis.com/auth/calendar',
+      aud: 'https://oauth2.googleapis.com/token',
+      exp: now + 3600,
+      iat: now,
+    })
+
+    const signingInput = `${header}.${payload}`
+
+    // Decodificar la clave privada PEM a ArrayBuffer
+    const pemBody = privateKey
+      .replace(/-----BEGIN PRIVATE KEY-----/, '')
+      .replace(/-----END PRIVATE KEY-----/, '')
+      .replace(/\s/g, '')
+    const keyBuffer = Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0))
+
+    // Importar la clave privada
+    const cryptoKey = await crypto.subtle.importKey(
+      'pkcs8',
+      keyBuffer,
+      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+      false,
+      ['sign']
+    )
+
+    // Firmar
+    const encoder = new TextEncoder()
+    const signatureBuffer = await crypto.subtle.sign(
+      'RSASSA-PKCS1-v1_5',
+      cryptoKey,
+      encoder.encode(signingInput)
+    )
+
+    const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '')
+
+    const jwt = `${signingInput}.${signature}`
+
+    // Intercambiar JWT por access token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`,
+    })
+
+    if (!tokenRes.ok) {
+      console.error('[Calendar] Error obteniendo access token:', await tokenRes.text())
+      return null
+    }
+
+    const tokenData = await tokenRes.json()
+    return tokenData.access_token as string
+  } catch (err) {
+    console.error('[Calendar] Error en autenticación JWT:', err)
+    return null
+  }
+}
+
+/**
+ * Crea un evento en Google Calendar usando la Service Account.
+ * Falla silenciosamente — la cita ya está en Supabase.
+ */
+async function createGoogleCalendarEvent(appt: AppointmentRecord): Promise<void> {
+  const serviceAccountEmail = Deno.env.get('GOOGLE_SERVICE_ACCOUNT_EMAIL')
+  const privateKeyRaw = Deno.env.get('GOOGLE_PRIVATE_KEY')
+  const calendarId = Deno.env.get('GOOGLE_CALENDAR_ID')
+
+  if (!serviceAccountEmail || !privateKeyRaw || !calendarId) {
+    console.log('[Calendar] Variables no configuradas — omitiendo evento')
+    return
+  }
+
+  try {
+    const accessToken = await getGoogleAccessToken(serviceAccountEmail, privateKeyRaw)
+    if (!accessToken) return
+
+    const time = normalizeTime(appt.appointment_time)
+    const [h, m] = time.split(':').map(Number)
+    const endH = String(h + 1).padStart(2, '0')
+    const endTime = `${endH}:${String(m).padStart(2, '0')}`
+
+    const event = {
+      summary: `VALEA | ${appt.patient_name} — ${appt.service}`,
+      description: [
+        `Paciente: ${appt.patient_name}`,
+        `Teléfono: ${appt.phone}`,
+        `Email: ${appt.email}`,
+        `Servicio: ${appt.service}`,
+        appt.notes ? `Notas: ${appt.notes}` : '',
+        `Ref: #${appt.confirmation_number ?? '—'}`,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+      start: {
+        dateTime: `${appt.appointment_date}T${time}:00`,
+        timeZone: 'America/Costa_Rica',
+      },
+      end: {
+        dateTime: `${appt.appointment_date}T${endTime}:00`,
+        timeZone: 'America/Costa_Rica',
+      },
+      location: 'VALEA Aesthetics, Alajuela, Costa Rica',
+      colorId: '1',
+    }
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(event),
+      }
+    )
+
+    if (!res.ok) {
+      console.error('[Calendar] Error al crear evento:', res.status, await res.text())
+    } else {
+      const data = await res.json()
+      console.log('[Calendar] Evento creado:', data.id)
+    }
+  } catch (err) {
+    console.error('[Calendar] Error inesperado:', err)
+  }
 }
 
 // ─── Notificaciones ───────────────────────────────────────────────────────────
@@ -288,8 +447,6 @@ async function notifyClient(appt: AppointmentRecord): Promise<void> {
   const doctorApiKey = Deno.env.get('DOCTOR_CALLMEBOT_KEY')
   const clinicName = Deno.env.get('CLINIC_NAME') ?? 'VALEA Aesthetics'
 
-  // CallMeBot requiere que el número del cliente también esté registrado
-  // en CallMeBot. Enviamos solo si el cliente tiene número válido.
   if (!appt.phone || !doctorApiKey) return
 
   const firstName = appt.patient_name.split(' ')[0]
@@ -308,16 +465,12 @@ async function notifyClient(appt: AppointmentRecord): Promise<void> {
     `Consultas: 7027-8704`,
   ].join('\n')
 
-  // Nota: el número del cliente requiere su propia API key de CallMeBot.
-  // Por ahora se usa la API key de la doctora como fallback.
-  // Para implementación completa, el cliente debe registrar su número en CallMeBot.
   await sendWhatsApp(appt.phone, doctorApiKey, message)
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
-  // Solo aceptar POST
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 })
   }
@@ -346,6 +499,9 @@ serve(async (req: Request) => {
       ),
       notifyClient(appt).catch((e) =>
         console.error('[notify] Error en WhatsApp cliente:', e)
+      ),
+      createGoogleCalendarEvent(appt).catch((e) =>
+        console.error('[notify] Error en Google Calendar:', e)
       )
     )
 
@@ -372,6 +528,9 @@ serve(async (req: Request) => {
       ),
       notifyClient(appt).catch((e) =>
         console.error('[notify] Error en WhatsApp cliente confirmación:', e)
+      ),
+      createGoogleCalendarEvent(appt).catch((e) =>
+        console.error('[notify] Error en Google Calendar confirmación:', e)
       )
     )
 
