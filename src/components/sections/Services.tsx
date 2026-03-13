@@ -44,7 +44,7 @@ const services = [
   },
   {
     name: 'Tratamientos Faciales',
-    subtitle: 'Médicos',
+    subtitle: 'Peeling Facial',
     description: 'Protocolos clínicos personalizados para tratar pigmentación, acné y envejecimiento.',
     icon: (
       <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1" className="w-8 h-8">
@@ -57,7 +57,7 @@ const services = [
   },
   {
     name: 'Perfilado Facial',
-    subtitle: 'Armonización',
+    subtitle: 'Armonización Facial',
     description: 'Redefinición y equilibrio del perfil facial con técnicas de alta precisión.',
     icon: (
       <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1" className="w-8 h-8">
@@ -67,26 +67,12 @@ const services = [
       </svg>
     ),
   },
-  {
-    name: 'Mesoterapia',
-    subtitle: 'Revitalización',
-    description: 'Microinyecciones de vitaminas y activos para revitalizar y nutrir la piel profundamente.',
-    icon: (
-      <svg viewBox="0 0 40 40" fill="none" stroke="currentColor" strokeWidth="1" className="w-8 h-8">
-        <line x1="20" y1="4" x2="20" y2="22" />
-        <circle cx="20" cy="26" r="4" />
-        <path d="M14 10 L20 4 L26 10" />
-        <line x1="8" y1="28" x2="14" y2="20" />
-        <line x1="32" y1="28" x2="26" y2="20" />
-        <line x1="6" y1="34" x2="34" y2="34" />
-      </svg>
-    ),
-  },
 ]
 
 const schedule = [
-  { day: 'Lunes — Viernes', hours: '9:00 AM – 6:00 PM', open: true },
-  { day: 'Sábados', hours: '9:00 AM – 2:00 PM', open: true },
+  { day: 'Lunes — Jueves', hours: '3:00 PM – 6:00 PM', open: true },
+  { day: 'Viernes', hours: '2:00 PM – 6:00 PM', open: true },
+  { day: 'Sábados', hours: '7:00 AM – 5:00 PM', open: true },
   { day: 'Domingos', hours: 'Cerrado', open: false },
 ]
 
