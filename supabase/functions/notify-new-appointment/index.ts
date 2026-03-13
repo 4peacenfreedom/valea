@@ -6,13 +6,12 @@
  * Por cada evento ejecuta en paralelo:
  *   1. Email de confirmación al cliente (vía Resend)
  *   2. WhatsApp de alerta a la doctora (vía CallMeBot) — solo en INSERT pending
- *   3. WhatsApp de confirmación al cliente (vía CallMeBot)
- *   4. Evento en Google Calendar (vía Service Account JWT)
+ *   3. Evento en Google Calendar (vía Service Account JWT)
  *
  * Flujos:
- *   INSERT status="pending"   → formulario público → email + WhatsApp doctora + WhatsApp cliente + Calendar
- *   INSERT status="confirmed" → dashboard (doctora) → email + WhatsApp cliente + Calendar
- *   UPDATE pending→confirmed  → doctora aprueba cita → email + WhatsApp cliente + Calendar
+ *   INSERT status="pending"   → formulario público → email + WhatsApp doctora + Calendar
+ *   INSERT status="confirmed" → dashboard (doctora) → email + Calendar
+ *   UPDATE pending→confirmed  → doctora aprueba cita → email + Calendar
  *
  * ─────────────────────────────────────────────────────────────────────────────
  * CONFIGURACIÓN REQUERIDA EN SUPABASE
@@ -440,34 +439,6 @@ async function notifyDoctor(appt: AppointmentRecord): Promise<void> {
   await sendWhatsApp(phone, apiKey, message)
 }
 
-/**
- * Confirmación WhatsApp al cliente.
- */
-async function notifyClient(appt: AppointmentRecord): Promise<void> {
-  const doctorApiKey = Deno.env.get('DOCTOR_CALLMEBOT_KEY')
-  const clinicName = Deno.env.get('CLINIC_NAME') ?? 'VALEA Aesthetics'
-
-  if (!appt.phone || !doctorApiKey) return
-
-  const firstName = appt.patient_name.split(' ')[0]
-  const message = [
-    `✅ *Cita Confirmada — ${clinicName}*`,
-    '',
-    `Hola ${firstName} 👋`,
-    `Tu cita quedó agendada:`,
-    `📅 ${formatDate(appt.appointment_date)}`,
-    `⏰ ${formatTime(appt.appointment_time)}`,
-    `💉 ${appt.service}`,
-    `📍 Alajuela, Costa Rica`,
-    `🔖 Ref: #${appt.confirmation_number ?? '—'}`,
-    '',
-    '_Recuerda llegar 10 min antes._',
-    `Consultas: 7027-8704`,
-  ].join('\n')
-
-  await sendWhatsApp(appt.phone, doctorApiKey, message)
-}
-
 // ─── Handler principal ────────────────────────────────────────────────────────
 
 serve(async (req: Request) => {
@@ -496,9 +467,6 @@ serve(async (req: Request) => {
     tasks.push(
       sendConfirmationEmail(appt).catch((e) =>
         console.error('[notify] Error en email:', e)
-      ),
-      notifyClient(appt).catch((e) =>
-        console.error('[notify] Error en WhatsApp cliente:', e)
       )
     )
 
@@ -530,9 +498,6 @@ serve(async (req: Request) => {
     tasks.push(
       sendConfirmationEmail(appt).catch((e) =>
         console.error('[notify] Error en email confirmación:', e)
-      ),
-      notifyClient(appt).catch((e) =>
-        console.error('[notify] Error en WhatsApp cliente confirmación:', e)
       ),
       createGoogleCalendarEvent(appt).catch((e) =>
         console.error('[notify] Error en Google Calendar confirmación:', e)
