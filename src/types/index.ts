@@ -131,9 +131,8 @@ export const SERVICES = [
   'Toxina Botulínica (Botox)',
   'Rellenos con Ácido Hialurónico',
   'Bioestimuladores de Colágeno',
-  'Tratamientos Faciales Médicos',
+  'Peeling Facial',
   'Perfilado Facial',
-  'Mesoterapia',
 ] as const
 
 export type Service = typeof SERVICES[number]

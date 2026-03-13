@@ -30,22 +30,31 @@ export function isPastDate(date: Date): boolean {
 }
 
 // Genera slots de 1 hora según el día de la semana.
-// 12:00 PM siempre bloqueado (almuerzo).
-// Lunes-Viernes: 9-11 AM y 1-5 PM (8 slots)
-// Sábados:       9-11 AM y 1 PM     (4 slots)
+// Lunes-Jueves: 3:00 PM – 6:00 PM (3 slots: 15, 16, 17)
+// Viernes:      2:00 PM – 6:00 PM (4 slots: 14, 15, 16, 17)
+// Sábados:      7:00 AM – 5:00 PM (10 slots: 7–16)
+// Domingos:     Cerrado
 export function generateTimeSlots(date: Date): string[] {
-  const isSat = date.getDay() === 6
+  const day = date.getDay() // 0=Dom, 1=Lun, ..., 5=Vie, 6=Sáb
   const slots: string[] = []
 
-  // Mañana: 9:00, 10:00, 11:00
-  for (let h = 9; h <= 11; h++) {
-    slots.push(`${String(h).padStart(2, '0')}:00`)
-  }
+  if (day === 0) return [] // Domingo cerrado
 
-  // Tarde: 13:00–17:00 (lunes-viernes) o solo 13:00 (sábado)
-  const afternoonEnd = isSat ? 14 : 18
-  for (let h = 13; h < afternoonEnd; h++) {
-    slots.push(`${String(h).padStart(2, '0')}:00`)
+  if (day === 6) {
+    // Sábado: 7am a 5pm (último slot a las 4pm)
+    for (let h = 7; h <= 16; h++) {
+      slots.push(`${String(h).padStart(2, '0')}:00`)
+    }
+  } else if (day === 5) {
+    // Viernes: 2pm a 6pm (último slot a las 5pm)
+    for (let h = 14; h <= 17; h++) {
+      slots.push(`${String(h).padStart(2, '0')}:00`)
+    }
+  } else {
+    // Lunes–Jueves: 3pm a 6pm (último slot a las 5pm)
+    for (let h = 15; h <= 17; h++) {
+      slots.push(`${String(h).padStart(2, '0')}:00`)
+    }
   }
 
   return slots
