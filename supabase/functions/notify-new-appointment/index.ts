@@ -491,7 +491,7 @@ serve(async (req: Request) => {
 
   // ── Caso 1: nueva cita (INSERT) ───────────────────────────────────────────
   if (payload.type === 'INSERT') {
-    console.log(`[notify] INSERT — ${appt.confirmation_number} — ${appt.patient_name}`)
+    console.log(`[notify] INSERT — ${appt.confirmation_number} — ${appt.patient_name} (${appt.status})`)
 
     tasks.push(
       sendConfirmationEmail(appt).catch((e) =>
@@ -499,17 +499,22 @@ serve(async (req: Request) => {
       ),
       notifyClient(appt).catch((e) =>
         console.error('[notify] Error en WhatsApp cliente:', e)
-      ),
-      createGoogleCalendarEvent(appt).catch((e) =>
-        console.error('[notify] Error en Google Calendar:', e)
       )
     )
 
-    // WhatsApp a la doctora solo cuando el cliente agenda desde el sitio (pending)
     if (appt.status === 'pending') {
+      // Formulario público: notificar a la doctora, NO crear evento en Calendar
+      // (la cita puede ser rechazada; el evento se crea al confirmar)
       tasks.push(
         notifyDoctor(appt).catch((e) =>
           console.error('[notify] Error en WhatsApp doctora:', e)
+        )
+      )
+    } else if (appt.status === 'confirmed') {
+      // Dashboard: la doctora agendó directamente → crear evento en Calendar
+      tasks.push(
+        createGoogleCalendarEvent(appt).catch((e) =>
+          console.error('[notify] Error en Google Calendar:', e)
         )
       )
     }
