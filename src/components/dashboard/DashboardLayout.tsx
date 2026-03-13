@@ -40,7 +40,7 @@ export default function DashboardLayout() {
         <img
           src="/logo_claro_transparente.svg"
           alt="VALEA Aesthetics"
-          className="h-14 object-contain"
+          className="h-40 object-contain"
         />
       </div>
 
